@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#101820">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src https://script.google.com https://script.googleusercontent.com https://0.peerjs.com wss://0.peerjs.com; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>XOR Talk</title>
+<style>
+/* 1画面アプリ: 上にヘッダー、中央に会話ログ、下にマイク */
+:root {
+  --bg: #f3f5f7; --panel: #ffffff; --fg: #15202b; --muted: #5d6b78; --line: #d9e0e6;
+  --accent: #0b7a75; --accent-fg: #ffffff; --me: #e3f2f1; --them: #ffffff; --warn: #b3261e;
+  --rec: #d93a2b;
+  --font: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0f161c; --panel: #172129; --fg: #e8eef2; --muted: #93a3b0; --line: #273541;
+    --accent: #3cc2b9; --accent-fg: #06201e; --me: #143430; --them: #1b2731; --warn: #ff8a80; --rec: #ff6b5b;
+    color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--fg); font: 16px/1.5 var(--font); -webkit-text-size-adjust: 100%; }
+#app { height: 100%; display: flex; flex-direction: column; max-width: 640px; margin: 0 auto;
+  padding: env(safe-area-inset-top, 0px) max(16px, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px) max(16px, env(safe-area-inset-left, 0px)); }
+section { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+[hidden] { display: none !important; }
+h1 { font-size: 22px; margin: 24px 0 4px; letter-spacing: .02em; }
+h2 { font-size: 17px; margin: 20px 0 8px; }
+p { margin: 0 0 12px; }
+.muted { color: var(--muted); font-size: 14px; }
+.stack { display: flex; flex-direction: column; gap: 12px; }
+.grow { flex: 1; }
+label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--muted); }
+input, select, button { font: inherit; }
+input, select { padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--fg); width: 100%; }
+button { border: 0; border-radius: 12px; padding: 14px 16px; cursor: pointer; background: var(--panel); color: var(--fg); border: 1px solid var(--line); }
+button.primary { background: var(--accent); color: var(--accent-fg); border-color: transparent; font-weight: 600; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+button:disabled { opacity: .5; }
+.big { padding: 18px; font-size: 18px; }
+.err { color: var(--warn); font-size: 14px; min-height: 1.5em; }
+.row { display: flex; gap: 8px; }
+.row > * { flex: 1; min-width: 0; }
+
+/* 待ち受け */
+.qrbox { align-self: center; background: #fff; padding: 14px; border-radius: 14px; margin: 8px 0; }
+.qrbox img, .qrbox canvas { display: block; width: min(64vw, 260px) !important; height: auto !important; }
+.linkline { word-break: break-all; font-size: 13px; color: var(--muted); text-align: center; }
+
+/* 会話 */
+.bar { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.bar .pair { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+.dot.on { background: var(--accent); }
+.bar button { padding: 8px 12px; font-size: 14px; }
+#log { flex: 1; overflow-y: auto; padding: 12px 0; display: flex; flex-direction: column; gap: 10px; -webkit-overflow-scrolling: touch; }
+.msg { max-width: 88%; padding: 10px 14px; border-radius: 16px; background: var(--them); border: 1px solid var(--line); cursor: pointer; }
+.msg.me { align-self: flex-end; background: var(--me); border-color: transparent; }
+.msg .main { font-size: 19px; line-height: 1.45; }
+.msg .sub { font-size: 14px; color: var(--muted); margin-top: 4px; }
+.msg .meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.empty { margin: auto; text-align: center; color: var(--muted); padding: 24px; }
+#live { min-height: 1.6em; color: var(--muted); font-size: 16px; text-align: center; padding: 4px 0; }
+.controls { padding: 8px 0 14px; display: flex; flex-direction: column; gap: 10px; }
+.mics { display: flex; gap: 10px; }
+.mic { flex: 1; padding: 22px 12px; font-size: 18px; font-weight: 600; border-radius: 18px; background: var(--accent); color: var(--accent-fg); border: 0; }
+.mic.alt { background: var(--panel); color: var(--fg); border: 1px solid var(--line); }
+.mic.rec { background: var(--rec); color: #fff; animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .75; } }
+@media (prefers-reduced-motion: reduce) { .mic.rec { animation: none; } }
+.typer { display: flex; gap: 8px; }
+.typer input { flex: 1; min-width: 0; }
+.typer button { flex: none; padding: 12px 16px; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ホーム（日本側） -->
+  <section id="s-home" hidden>
+    <h1>XOR Talk</h1>
+    <p class="muted">話した言葉を訳して相手のスマホに届けます。</p>
+    <div class="stack grow">
+      <button class="primary big" id="b-host">相手のスマホとつなぐ</button>
+      <button class="big" id="b-solo">1台で交互に話す</button>
+      <label>相手の言語（1台モード）
+        <select id="solo-lang"></select>
+      </label>
+    </div>
+    <div class="stack" style="padding-bottom:16px">
+      <div class="err" id="home-err"></div>
+      <button id="b-settings">設定</button>
+    </div>
+  </section>
+
+  <!-- 設定（日本側） -->
+  <section id="s-settings" hidden>
+    <h1>設定</h1>
+    <div class="stack grow">
+      <label>自分の言語 <select id="my-lang"></select></label>
+      <label>翻訳 URL（Apps Script のウェブアプリ URL）
+        <input id="gas-url" type="url" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off">
+      </label>
+      <label>トークン <input id="gas-token" type="text" autocomplete="off" spellcheck="false"></label>
+      <div class="err" id="set-msg"></div>
+    </div>
+    <div class="stack" style="padding-bottom:16px">
+      <button id="b-test">翻訳を試す</button>
+      <button class="primary" id="b-save">保存</button>
+    </div>
+  </section>
+
+  <!-- 待ち受け（日本側） -->
+  <section id="s-wait" hidden>
+    <h1>相手に読み取ってもらう</h1>
+    <p class="muted">相手のスマホのカメラでQRを読むと、ブラウザで開きます。アプリのインストールは不要です。QRは毎回変わり、つなげるのは最初の1人だけです。</p>
+    <div class="qrbox" id="qr"></div>
+    <div class="linkline" id="room-link"></div>
+    <div class="err" id="wait-msg" style="text-align:center"></div>
+    <div class="grow"></div>
+    <div class="stack" style="padding-bottom:16px">
+      <button id="b-copy">リンクをコピー</button>
+      <button id="b-wait-back">戻る</button>
+    </div>
+  </section>
+
+  <!-- 参加（相手側） -->
+  <section id="s-join" hidden>
+    <h1>XOR Talk</h1>
+    <p class="muted" lang="en">Choose your language. What you say will be translated for the other person.</p>
+    <div class="stack grow">
+      <label lang="en">Your language <select id="guest-lang"></select></label>
+      <button class="primary big" id="b-join" lang="en">Connect</button>
+      <div class="err" id="join-msg" lang="en"></div>
+    </div>
+  </section>
+
+  <!-- 会話 -->
+  <section id="s-talk" hidden>
+    <div class="bar">
+      <span class="dot" id="dot"></span>
+      <span class="pair" id="pair"></span>
+      <button id="b-end">終了</button>
+    </div>
+    <div id="log"><div class="empty" id="empty"></div></div>
+    <div id="live" aria-live="polite"></div>
+    <div class="controls">
+      <div class="mics" id="mics"></div>
+      <form class="typer" id="typer">
+        <input id="type-in" type="text" autocomplete="off" enterkeyhint="send">
+        <button type="submit" id="type-send">送信</button>
+      </form>
+    </div>
+  </section>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js" integrity="sha384-nlUQ8ZqCbvStErob+biJNzSgltf6urV3VGqhfIfzhmg9RXmpeRm76ELw0pYnKlTR" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" integrity="sha384-3zSEDfvllQohrq0PHL1fOXJuC/jSOO34H46t6UQfobFOmxE5BpjjaIJY5F2/bMnU" crossorigin="anonymous"></script>
+<script src="app.js"></script>
+</body>
+</html>
